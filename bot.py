@@ -1,4 +1,3 @@
-python
 import os, json
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
