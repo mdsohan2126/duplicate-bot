@@ -1,44 +1,46 @@
-import json, os
-import threading
-from http.server import HTTPServer, BaseHTTPRequestHandler
+python
+import os, json
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
-# Dummy web server for Render free tier
-class MyHandler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(200)
-        self.end_headers()
-        self.wfile.write(b"Bot is Live!")
+TOKEN = os.environ.get("TOKEN")
+DB_FILE = "videos.json"
 
-def run_server():
-    port = int(os.environ.get("PORT", 10000))
-    server = HTTPServer(('0.0.0.0', port), MyHandler)
-    server.serve_forever()
-
-threading.Thread(target=run_server, daemon=True).start()
-
-TOKEN = os.getenv("TOKEN")
-DB = "videos.json"
-seen_videos = set()
-
-if os.path.exists(DB):
-    try:
-        seen_videos = set(json.load(open(DB)))
-    except:
-        seen_videos = set()
+# load old database
+if os.path.exists(DB_FILE):
+    with open(DB_FILE, "r") as f:
+        videos = set(json.load(f))
+else:
+    videos = set()
 
 async def check_duplicate(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.channel_post and update.channel_post.video:
-        file_id = update.channel_post.video.file_unique_id
-        if file_id in seen_videos:
-            try:
-                await context.bot.delete_message(chat_id=update.channel_post.chat_id, message_id=update.channel_post.message_id)
-            except Exception as e:
-                print(e)
-        else:
-            seen_videos.add(file_id)
-            json.dump(list(seen_videos), open(DB, "w"))
+    if not update.channel_post:
+        return
+        
+    file_id = None
+    if update.channel_post.video:
+        file_id = update.channel_post.video.file_id
+    elif update.channel_post.photo:
+        file_id = update.channel_post.photo[-1].file_id
+    elif update.channel_post.document:
+        file_id = update.channel_post.document.file_id
+
+    if not file_id:
+        return
+
+    chat_id = update.channel_post.chat.id
+    message_id = update.channel_post.message_id
+
+    if file_id in videos:
+        try:
+            await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
+        except:
+            pass
+        return
+    
+    videos.add(file_id)
+    with open(DB_FILE, "w") as f:
+        json.dump(list(videos), f)
 
 app = Application.builder().token(TOKEN).build()
 app.add_handler(MessageHandler(filters.ALL, check_duplicate))
