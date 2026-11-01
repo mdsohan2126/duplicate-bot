@@ -1,11 +1,24 @@
-import os, json, asyncio
+import os, json, threading
+from flask import Flask
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 from telegram.request import HTTPXRequest
-from telegram.error import TimedOut, NetworkError
 
 TOKEN = os.environ.get("TOKEN")
 DB_FILE = "videos.json"
+
+# --- Web Service er jonno port kholar trick (Free te) ---
+app_flask = Flask(__name__)
+@app_flask.route('/')
+def home():
+    return "Bot is Running!"
+
+def run_flask():
+    port = int(os.environ.get("PORT", 10000))
+    app_flask.run(host='0.0.0.0', port=port)
+
+threading.Thread(target=run_flask, daemon=True).start()
+# --- End ---
 
 if os.path.exists(DB_FILE):
     try:
@@ -33,51 +46,20 @@ async def check_duplicate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if file_id in videos:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-            print(f"Deleted duplicate: {message_id}")
+            print(f"DELETED: {message_id}")
         except Exception as e:
-            print(f"Delete failed: {e}")
+            print(f"Delete Failed (Admin?): {e}")
         return
     videos.add(file_id)
     with open(DB_FILE, "w") as f:
         json.dump(list(videos), f)
 
-async def error_handler(update, context):
-    err = str(context.error)
-    print(f"Ignoring error: {err}")
-    if "Timed out" in err or "TimedOut" in err:
-        await asyncio.sleep(5)
-
 def main():
-    request = HTTPXRequest(
-        connect_timeout=30.0,
-        read_timeout=60.0,
-        write_timeout=30.0,
-        pool_timeout=60.0
-    )
+    request = HTTPXRequest(connect_timeout=30.0, read_timeout=60.0)
     app = Application.builder().token(TOKEN).request(request).build()
     app.add_handler(MessageHandler(filters.ALL, check_duplicate))
-    app.add_error_handler(error_handler)
-    
-    # Auto-restart loop, jate Render e kokhono off na hoy
-    while True:
-        try:
-            print("Bot Started...")
-            app.run_polling(
-                drop_pending_updates=True,
-                allowed_updates=["channel_post"],
-                timeout=60,
-                poll_interval=5.0
-            )
-        except (TimedOut, NetworkError) as e:
-            print(f"Network timeout, restarting in 5s: {e}")
-            import time
-            time.sleep(5)
-            continue
-        except Exception as e:
-            print(f"Crashed, restarting in 10s: {e}")
-            import time
-            time.sleep(10)
-            continue
+    print("Auto Delete Bot Started...")
+    app.run_polling(drop_pending_updates=True, allowed_updates=["channel_post"])
 
 if __name__ == "__main__":
     main()
