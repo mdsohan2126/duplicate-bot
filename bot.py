@@ -1,14 +1,17 @@
-import os, json
+import os, json, asyncio
 from telegram import Update
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram.request import HTTPXRequest
 
 TOKEN = os.environ.get("TOKEN")
 DB_FILE = "videos.json"
 
-# load old database
 if os.path.exists(DB_FILE):
-    with open(DB_FILE, "r") as f:
-        videos = set(json.load(f))
+    try:
+        with open(DB_FILE, "r") as f:
+            videos = set(json.load(f))
+    except:
+        videos = set()
 else:
     videos = set()
 
@@ -33,14 +36,26 @@ async def check_duplicate(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if file_id in videos:
         try:
             await context.bot.delete_message(chat_id=chat_id, message_id=message_id)
-        except:
-            pass
+        except Exception as e:
+            print(f"Delete failed: {e}")
         return
     
     videos.add(file_id)
-    with open(DB_FILE, "w") as f:
-        json.dump(list(videos), f)
+    try:
+        with open(DB_FILE, "w") as f:
+            json.dump(list(videos), f)
+    except:
+        pass
 
-app = Application.builder().token(TOKEN).build()
-app.add_handler(MessageHandler(filters.ALL, check_duplicate))
-app.run_polling()
+async def error_handler(update, context):
+    print(f"Error: {context.error}")
+
+def main():
+    request = HTTPXRequest(connect_timeout=30.0, read_timeout=30.0)
+    app = Application.builder().token(TOKEN).request(request).build()
+    app.add_handler(MessageHandler(filters.ALL, check_duplicate))
+    app.add_error_handler(error_handler)
+    app.run_polling(drop_pending_updates=True, allowed_updates=["channel_post"])
+
+if __name__ == "__main__":
+    main()
